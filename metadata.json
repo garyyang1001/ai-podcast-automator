@@ -1,0 +1,6 @@
+{
+  "name": "AI Podcast Automator",
+  "description": "An application to automatically generate podcast scripts from web content using AI, configure speakers, and prepare for audio generation and distribution.",
+  "requestFramePermissions": [],
+  "prompt": ""
+}
