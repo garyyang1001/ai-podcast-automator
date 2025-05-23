@@ -1,4 +1,3 @@
-
 export interface Speaker {
   id: string;
   name: string;
@@ -27,6 +26,7 @@ export enum ScriptMode {
   MULTI = 'multi-speaker',
 }
 
+// 簡化的 VoiceOption 介面（移除 provider 屬性，因為全部使用 Gemini TTS）
 export interface VoiceOption {
   id: string;
   name: string;
@@ -37,14 +37,13 @@ export interface WebContentSource {
   text: string;
 }
 
-// Updated to match Firecrawl API response
+// 保持 Firecrawl API 回應介面不變
 export interface FirecrawlScrapeData {
-  markdown: string; // Changed from 'content' to 'markdown'
-  // Add other fields if needed, like metadata, title, etc.
-  metadata?: { // Adding metadata as it's present in the example response
+  markdown: string;
+  metadata?: {
     ogTitle?: string;
     description?: string;
-    [key: string]: any; // For other potential metadata fields
+    [key: string]: any;
   }
 }
 
