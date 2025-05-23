@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback } from 'react';
 import { Speaker, SeoMeta, ScriptMode, DialogLine } from '../types'; // Removed VoiceOption
 import { AVAILABLE_VOICES, GEMINI_MODEL_TEXT } from '../constants';
@@ -115,58 +114,49 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     updateSpeaker(index, { ...speakers[index], [field]: value });
   };
 
+  // 🔥 修正的 TTS API 函數 - 使用 Google Cloud TTS API 支援 Chirp 3 HD
   const synthesizeSpeechInternal = useCallback(async (text: string, voiceId: string, languageCode: string = 'cmn-TW'): Promise<string | null> => {
     const apiKey = process.env.GOOGLE_CLOUD_TTS_API_KEY;
-    const projectId = process.env.VERTEX_AI_PROJECT_ID;
-    const region = process.env.VERTEX_AI_REGION;
 
     if (!apiKey) {
       setError("Google Cloud API Key (GOOGLE_CLOUD_TTS_API_KEY) not found. Please configure it in .env.");
       return null;
     }
-    if (!projectId || !region) {
-      setError("Vertex AI Project ID or Region not found. Please ensure VERTEX_AI_PROJECT_ID and VERTEX_AI_REGION are configured in your .env file and Vite restarted.");
-      return null;
-    }
     
-    const vertexApiEndpoint = `https://${region}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${region}/publishers/google/models/texttospeech:predict`;
+    // 使用 Google Cloud Text-to-Speech API，支援 Chirp 3 HD
+    const ttsApiEndpoint = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`;
 
     try {
-      const response = await fetch(vertexApiEndpoint, {
+      const response = await fetch(ttsApiEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`, 
         },
         body: JSON.stringify({
-          "instances": [ 
-            {
-              "input": { "text": text },
-              "voice": { 
-                "languageCode": languageCode, 
-                "name": voiceId 
-              },
-              "audioConfig": { "audioEncoding": "MP3" }
-            }
-          ]
+          input: { text: text },
+          voice: { 
+            languageCode: languageCode, 
+            name: voiceId 
+          },
+          audioConfig: { audioEncoding: "MP3" }
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        console.error("Vertex AI TTS API Error:", errorData);
-        throw new Error(errorData.error?.message || `Vertex AI TTS API request failed: ${response.statusText}`);
+        console.error("Google Cloud TTS API Error:", errorData);
+        throw new Error(errorData.error?.message || `Google Cloud TTS API request failed: ${response.statusText}`);
       }
 
       const result = await response.json();
-      if (result.predictions && result.predictions.length > 0 && result.predictions[0].audioContent) {
-        return result.predictions[0].audioContent; 
+      if (result.audioContent) {
+        return result.audioContent; 
       } else {
-        console.error("Vertex AI TTS API did not return expected audio content structure:", result);
-        throw new Error("Vertex AI TTS API did not return audio content in the expected format.");
+        console.error("Google Cloud TTS API did not return expected audio content structure:", result);
+        throw new Error("Google Cloud TTS API did not return audio content in the expected format.");
       }
     } catch (e) {
-      console.error("Error synthesizing speech via Vertex AI:", e);
+      console.error("Error synthesizing speech via Google Cloud TTS:", e);
       throw e; 
     }
   }, [setError]);
@@ -182,7 +172,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     const voiceOption = AVAILABLE_VOICES.find(v => v.id === speaker.voice);
     const voiceStyleName = voiceOption ? voiceOption.name : "預設風格";
     const speakerName = speaker.name || `發言人 ${speakerIndex + 1}`;
-    const textToSpeak = `這是 ${speakerName} 使用 ${voiceStyleName} 風格設定的語音預覽。你好嗎？這是由Vertex AI Text-to-Speech產生。`;
+    const textToSpeak = `這是 ${speakerName} 使用 ${voiceStyleName} 風格設定的語音預覽。你好嗎？這是由Google Cloud Text-to-Speech產生。`;
     
     try {
         const audioContentBase64 = await synthesizeSpeechInternal(textToSpeak, speaker.voice);
@@ -334,20 +324,20 @@ export const RightPanel: React.FC<RightPanelProps> = ({
             />
             <div className="flex items-end space-x-2">
                 <Select
-                    label="Vertex AI / Google Cloud TTS 語音"
+                    label="Google Cloud TTS 語音 (支援 Chirp 3 HD)"
                     id={`speaker-voice-style-${speaker.id}`}
                     value={speaker.voice} 
                     onChange={(e) => handleSpeakerChange(speakerArrayIndex, 'voice', e.target.value)}
                     options={AVAILABLE_VOICES.map(v => ({ value: v.id, label: v.name }))}
                     className="flex-grow"
-                    helperText="選擇 Vertex AI / Google Cloud TTS 語音。風格描述用於AI腳本生成，此處選擇實際發聲語音。"
+                    helperText="選擇 Google Cloud TTS 語音，包含最新的 Chirp 3 HD 高品質語音。"
                 />
                 <Button 
                     onClick={() => handlePreviewVoice(speakerArrayIndex)} 
                     variant="outline" 
                     size="md" 
                     className="mb-3 flex-shrink-0"
-                    aria-label={`預覽 ${speaker.name} 的 Vertex AI TTS 語音`}
+                    aria-label={`預覽 ${speaker.name} 的 Google Cloud TTS 語音`}
                     disabled={isSynthesizingAudio}
                 >
                     {isSynthesizingAudio && 
@@ -356,7 +346,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                 </Button>
             </div>
           </div>
-        )})}
+        )}))}
       </AccordionSection>
       
       <div className="space-y-3 pt-3">
