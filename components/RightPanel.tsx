@@ -28,7 +28,6 @@ interface RightPanelProps {
   onAudioSegmentSynthesized: (lineId: string, duration: number) => void;
 }
 
-// 簡化的環境變數獲取函數
 const getEnvVar = (key: string): string | undefined => {
   if (typeof window !== 'undefined') {
     return (window as any)?.env?.[key] || (import.meta as any)?.env?.[`VITE_${key}`] || (import.meta as any)?.env?.[key];
@@ -83,63 +82,59 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     updateSpeaker(index, { ...speakers[index], [field]: value });
   };
 
-  const synthesizeSpeechInternal = useCallback(async (text: string, voiceId: string, languageCode: string = 'cmn-TW'): Promise<string | null> => {
-    const apiKey = process.env.GOOGLE_CLOUD_TTS_API_KEY;
-    const projectId = process.env.VERTEX_AI_PROJECT_ID;
-    const region = process.env.VERTEX_AI_REGION;
+  const synthesizeWithGeminiTTS = useCallback(async (text: string, voiceId: string): Promise<string | null> => {
+    const geminiApiKey = getEnvVar('API_KEY');
 
-    if (!apiKey) {
-      setError("Google Cloud API Key (GOOGLE_CLOUD_TTS_API_KEY) not found. Please configure it in .env.");
+    if (!geminiApiKey) {
+      setError("Gemini API Key (API_KEY) 未找到。請在 .env 檔案中設定 VITE_API_KEY。");
       return null;
     }
-    if (!projectId || !region) {
-      setError("Vertex AI Project ID or Region not found. Please ensure VERTEX_AI_PROJECT_ID and VERTEX_AI_REGION are configured in your .env file and Vite restarted.");
-      return null;
-    }
-    
-    const vertexApiEndpoint = `https://${region}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${region}/publishers/google/models/texttospeech:predict`;
 
     try {
-      const response = await fetch(vertexApiEndpoint, {
+      const response = await fetch('/api/gemini/v1beta/models/gemini-2.5-flash-preview-tts:generateContent', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`, 
+          'x-goog-api-key': geminiApiKey,
         },
         body: JSON.stringify({
-          "instances": [ 
-            {
-              "input": { "text": text },
-              "voice": { 
-                "languageCode": languageCode, 
-                "name": voiceId 
-              },
-              "audioConfig": { "audioEncoding": "MP3" }
+          contents: [{
+            parts: [{
+              text: text
+            }]
+          }],
+          generationConfig: {
+            responseModalities: ["AUDIO"],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: {
+                  voiceName: voiceId
+                }
+              }
             }
-          ]
+          }
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        console.error("Vertex AI TTS API Error:", errorData);
-        throw new Error(errorData.error?.message || `Vertex AI TTS API request failed: ${response.statusText}`);
+        console.error("Gemini TTS API Error:", errorData);
+        throw new Error(errorData.error?.message || `Gemini TTS API 請求失敗: ${response.statusText}`);
       }
 
       const result = await response.json();
-      if (result.predictions && result.predictions.length > 0 && result.predictions[0].audioContent) {
-        return result.predictions[0].audioContent; 
+      if (result.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data) {
+        return result.candidates[0].content.parts[0].inlineData.data;
       } else {
-        console.error("Vertex AI TTS API did not return expected audio content structure:", result);
-        throw new Error("Vertex AI TTS API did not return audio content in the expected format.");
+        console.error("Gemini TTS API 沒有返回預期的音頻內容:", result);
+        throw new Error("Gemini TTS API 沒有返回音頻內容。");
       }
     } catch (e) {
-      console.error("Error synthesizing speech via Vertex AI:", e);
-      throw e; 
+      console.error("Gemini TTS 語音合成錯誤:", e);
+      throw e;
     }
   }, [setError]);
 
-  // 🎭 Gemini TTS 多人對話語音合成 - 使用代理路徑
   const synthesizeMultiSpeakerWithGemini = useCallback(async (dialogLines: DialogLine[], speakers: Speaker[]): Promise<string | null> => {
     const geminiApiKey = getEnvVar('API_KEY');
 
@@ -148,13 +143,11 @@ export const RightPanel: React.FC<RightPanelProps> = ({
       return null;
     }
 
-    // 構建對話腳本
     const script = dialogLines.map(line => {
       const speaker = speakers.find(s => s.id === line.speakerId);
       return `${speaker?.name || 'Speaker'}: ${line.text}`;
     }).join('\n');
 
-    // 構建多人語音配置（最多2人）
     const activeSpeakers = scriptMode === ScriptMode.SINGLE ? [speakers[0]] : speakers.slice(0, 2);
     const speakerConfigs = activeSpeakers.map(speaker => ({
       speaker: speaker.name,
@@ -168,7 +161,6 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     const prompt = `TTS the following conversation between ${activeSpeakers.map(s => s.name).join(' and ')}:\n${script}`;
 
     try {
-      // 使用代理路徑
       const response = await fetch('/api/gemini/v1beta/models/gemini-2.5-flash-preview-tts:generateContent', {
         method: 'POST',
         headers: {
@@ -209,12 +201,10 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     }
   }, [setError, scriptMode]);
 
-  // 🎵 純 Gemini TTS 語音合成
   const synthesizeSpeechInternal = useCallback(async (text: string, voiceId: string): Promise<string | null> => {
     return await synthesizeWithGeminiTTS(text, voiceId);
   }, [synthesizeWithGeminiTTS]);
 
-  // 🎙️ 語音預覽
   const handlePreviewVoice = useCallback(async (speakerIndex: number) => {
     const speaker = speakers[speakerIndex];
     if (!speaker || isSynthesizingAudio) return;
@@ -225,7 +215,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     const voiceOption = AVAILABLE_VOICES.find(v => v.id === speaker.voice);
     const voiceStyleName = voiceOption ? voiceOption.name : "預設風格";
     const speakerName = speaker.name || `發言人 ${speakerIndex + 1}`;
-    const textToSpeak = `這是 ${speakerName} 使用 ${voiceStyleName} 風格設定的語音預覽。你好嗎？這是由Vertex AI Text-to-Speech產生。`;
+    const textToSpeak = `這是 ${speakerName} 使用 ${voiceStyleName} 風格設定的語音預覽。您好，這是由 Gemini AI 原生語音技術產生的高品質語音。`;
     
     try {
         const audioContentBase64 = await synthesizeSpeechInternal(textToSpeak, speaker.voice);
@@ -244,7 +234,6 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     }
   }, [speakers, synthesizeSpeechInternal, setError, isSynthesizingAudio, setIsSynthesizingAudio]);
 
-  // 🚀 完整 Podcast 語音生成
   const handleGenerateFullPodcastAudio = useCallback(async () => {
     if (dialogLines.length === 0) {
       setError("請先生成腳本才能產生語音。");
@@ -255,7 +244,6 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     setError(null);
 
     try {
-      // 優先使用 Gemini 多人對話 TTS（適用於多人模式且說話者 ≤ 2人）
       if (scriptMode === ScriptMode.MULTI && speakers.length <= 2) {
         console.log("使用 Gemini 多人對話 TTS 生成完整對話...");
         
@@ -270,7 +258,6 @@ export const RightPanel: React.FC<RightPanelProps> = ({
           const byteArray = new Uint8Array(byteNumbers);
           const blob = new Blob([byteArray], { type: 'audio/wav' });
 
-          // 直接下載完整對話
           const link = document.createElement('a');
           link.href = URL.createObjectURL(blob);
           link.download = 'gemini_podcast_full_conversation.wav';
@@ -279,7 +266,6 @@ export const RightPanel: React.FC<RightPanelProps> = ({
           document.body.removeChild(link);
           URL.revokeObjectURL(link.href);
 
-          // 為所有行設置估算時長
           dialogLines.forEach(line => {
             const lineDuration = line.text.length * 0.1;
             onAudioSegmentSynthesized(line.id, lineDuration);
@@ -313,7 +299,6 @@ export const RightPanel: React.FC<RightPanelProps> = ({
               const byteArray = new Uint8Array(byteNumbers);
               const blob = new Blob([byteArray], { type: 'audio/wav' });
               
-              // 估算時長
               const lineDuration = line.text.length * 0.1;
               onAudioSegmentSynthesized(line.id, lineDuration);
 
@@ -390,7 +375,6 @@ export const RightPanel: React.FC<RightPanelProps> = ({
       </div>
 
       <AccordionSection title="語音設定 (Voice Settings)" icon={<Cog8ToothIcon className="w-5 h-5 text-slate-400" />} defaultOpen={true} id="voice-settings-section">
-        {/* Gemini TTS 狀態指示器 */}
         <div className="mb-4 p-3 bg-slate-800 rounded-md border border-emerald-600/50">
           <div className="flex items-center">
             <span className="w-2 h-2 rounded-full bg-emerald-400 mr-2"></span>
@@ -418,20 +402,20 @@ export const RightPanel: React.FC<RightPanelProps> = ({
             />
             <div className="flex items-end space-x-2">
                 <Select
-                    label="Vertex AI / Google Cloud TTS 語音"
+                    label="🎤 Gemini AI 原生語音 (30種高品質選項)"
                     id={`speaker-voice-style-${speaker.id}`}
                     value={speaker.voice} 
                     onChange={(e) => handleSpeakerChange(speakerArrayIndex, 'voice', e.target.value)}
                     options={AVAILABLE_VOICES.map(v => ({ value: v.id, label: v.name }))}
                     className="flex-grow"
-                    helperText="選擇 Vertex AI / Google Cloud TTS 語音。風格描述用於AI腳本生成，此處選擇實際發聲語音。"
+                    helperText="✨ 使用 Gemini AI 原生語音技術，支援多人對話、風格控制和 24 種語言。"
                 />
                 <Button 
                     onClick={() => handlePreviewVoice(speakerArrayIndex)} 
                     variant="outline" 
                     size="md" 
                     className="mb-3 flex-shrink-0"
-                    aria-label={`預覽 ${speaker.name} 的 Vertex AI TTS 語音`}
+                    aria-label={`預覽 ${speaker.name} 的 Gemini AI 語音`}
                     disabled={isSynthesizingAudio}
                 >
                     {isSynthesizingAudio && 
@@ -440,7 +424,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                 </Button>
             </div>
           </div>
-        )}))}
+        )})}
       </AccordionSection>
       
       <div className="space-y-3 pt-3">
