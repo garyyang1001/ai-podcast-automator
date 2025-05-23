@@ -4,7 +4,11 @@ import { AVAILABLE_VOICES, GEMINI_MODEL_TEXT } from '../constants';
 import { Button, Select, TextInput } from './shared/FormControls';
 import { ChevronDownIcon, ChevronUpIcon, Cog8ToothIcon, DocumentTextIcon, MusicalNoteIcon, UserIcon, UsersIcon, SparklesIcon, PlayCircleIcon, ClockIcon } from './icons/HeroIcons';
 import { Spinner } from './shared/Spinner';
+
 import JSZip from 'jszip';
+
+// ---- Local helper type ----
+type SynthesizedAudio = { data: string; mimeType: string };
 
 interface RightPanelProps {
   scriptMode: ScriptMode;
@@ -84,7 +88,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     updateSpeaker(index, { ...speakers[index], [field]: value });
   };
 
-  const synthesizeWithGeminiTTS = useCallback(async (text: string, voiceId: string): Promise<string | null> => {
+  const synthesizeWithGeminiTTS = useCallback(async (text: string, voiceId: string): Promise<SynthesizedAudio | null> => {
     const geminiApiKey = getEnvVar('API_KEY');
 
     if (!geminiApiKey) {
@@ -133,7 +137,8 @@ export const RightPanel: React.FC<RightPanelProps> = ({
 
       const result = await response.json();
       if (result.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data) {
-        return result.candidates[0].content.parts[0].inlineData.data;
+        const inline = result.candidates[0].content.parts[0].inlineData;
+        return { data: inline.data, mimeType: inline.mimeType || 'audio/mpeg' };
       } else {
         console.error("Gemini TTS API 沒有返回預期的音頻內容:", result);
         throw new Error("Gemini TTS API 沒有返回音頻內容。");
@@ -144,7 +149,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     }
   }, [setError]);
 
-  const synthesizeMultiSpeakerWithGemini = useCallback(async (dialogLines: DialogLine[], speakers: Speaker[]): Promise<string | null> => {
+  const synthesizeMultiSpeakerWithGemini = useCallback(async (dialogLines: DialogLine[], speakers: Speaker[]): Promise<SynthesizedAudio | null> => {
     const geminiApiKey = getEnvVar('API_KEY');
 
     if (!geminiApiKey) {
@@ -208,7 +213,8 @@ export const RightPanel: React.FC<RightPanelProps> = ({
 
       const result = await response.json();
       if (result.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data) {
-        return result.candidates[0].content.parts[0].inlineData.data;
+        const inline = result.candidates[0].content.parts[0].inlineData;
+        return { data: inline.data, mimeType: inline.mimeType || 'audio/mpeg' };
       } else {
         throw new Error("Gemini TTS 沒有返回音頻內容。");
       }
@@ -218,7 +224,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     }
   }, [setError, scriptMode]);
 
-  const synthesizeSpeechInternal = useCallback(async (text: string, voiceId: string): Promise<string | null> => {
+  const synthesizeSpeechInternal = useCallback(async (text: string, voiceId: string): Promise<SynthesizedAudio | null> => {
     return await synthesizeWithGeminiTTS(text, voiceId);
   }, [synthesizeWithGeminiTTS]);
 
@@ -235,16 +241,16 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     const textToSpeak = `這是 ${speakerName} 使用 ${voiceStyleName} 風格設定的語音預覽。您好，這是由 Gemini AI 原生語音技術產生的高品質語音。`;
     
     try {
-        const audioContentBase64 = await synthesizeSpeechInternal(textToSpeak, speaker.voice);
-        if (audioContentBase64) {
+        const synthesized = await synthesizeSpeechInternal(textToSpeak, speaker.voice);
+        if (synthesized) {
             // 以 Blob + objectURL 方式播放，兼容性較好
-            const byteCharacters = atob(audioContentBase64);
+            const byteCharacters = atob(synthesized.data);
             const byteNumbers = new Array(byteCharacters.length);
             for (let i = 0; i < byteCharacters.length; i++) {
               byteNumbers[i] = byteCharacters.charCodeAt(i);
             }
             const byteArray = new Uint8Array(byteNumbers);
-            const blob = new Blob([byteArray], { type: 'audio/wav' });
+            const blob = new Blob([byteArray], { type: synthesized.mimeType });
             const audioSrc = URL.createObjectURL(blob);
             const audio = new Audio(audioSrc);
             audio.play().catch(e => {
@@ -273,20 +279,21 @@ export const RightPanel: React.FC<RightPanelProps> = ({
       if (scriptMode === ScriptMode.MULTI && speakers.length <= 2) {
         console.log("使用 Gemini 多人對話 TTS 生成完整對話...");
         
-        const audioContentBase64 = await synthesizeMultiSpeakerWithGemini(dialogLines, speakers);
+        const synthesized = await synthesizeMultiSpeakerWithGemini(dialogLines, speakers);
         
-        if (audioContentBase64) {
-          const byteCharacters = atob(audioContentBase64);
+        if (synthesized) {
+          const byteCharacters = atob(synthesized.data);
           const byteNumbers = new Array(byteCharacters.length);
           for (let j = 0; j < byteCharacters.length; j++) {
             byteNumbers[j] = byteCharacters.charCodeAt(j);
           }
           const byteArray = new Uint8Array(byteNumbers);
-          const blob = new Blob([byteArray], { type: 'audio/wav' });
+          const blob = new Blob([byteArray], { type: synthesized.mimeType });
 
           const link = document.createElement('a');
           link.href = URL.createObjectURL(blob);
-          link.download = 'gemini_podcast_full_conversation.wav';
+          const ext = synthesized.mimeType.includes('mpeg') ? 'mp3' : 'wav';
+          link.download = `gemini_podcast_full_conversation.${ext}`;
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
@@ -314,22 +321,23 @@ export const RightPanel: React.FC<RightPanelProps> = ({
           }
           
           try {
-            const audioContentBase64 = await synthesizeSpeechInternal(line.text, speaker.voice);
+            const synthesized = await synthesizeSpeechInternal(line.text, speaker.voice);
 
-            if (audioContentBase64) {
-              const byteCharacters = atob(audioContentBase64);
+            if (synthesized) {
+              const byteCharacters = atob(synthesized.data);
               const byteNumbers = new Array(byteCharacters.length);
               for (let j = 0; j < byteCharacters.length; j++) {
                 byteNumbers[j] = byteCharacters.charCodeAt(j);
               }
               const byteArray = new Uint8Array(byteNumbers);
-              const blob = new Blob([byteArray], { type: 'audio/wav' });
+              const blob = new Blob([byteArray], { type: synthesized.mimeType });
               
               const lineDuration = line.text.length * 0.1;
               onAudioSegmentSynthesized(line.id, lineDuration);
 
               const safeSpeakerName = speaker.name.replace(/[^\w\s\u4e00-\u9fa5]/gi, '').replace(/\s+/g, '_'); 
-              const fileName = `podcast_segment_${String(i + 1).padStart(2, '0')}_${safeSpeakerName}.wav`;
+              const ext = synthesized.mimeType.includes('mpeg') ? 'mp3' : 'wav';
+              const fileName = `podcast_segment_${String(i + 1).padStart(2, '0')}_${safeSpeakerName}.${ext}`;
               audioSegments.push({ name: fileName, data: blob });
             } else {
                setError(`第 ${i + 1} 行語音合成失敗，未收到音訊內容。`);
