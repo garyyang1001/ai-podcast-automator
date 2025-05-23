@@ -78,6 +78,8 @@ export const RightPanel: React.FC<RightPanelProps> = ({
   panelHeightClass,
   onAudioSegmentSynthesized,
 }) => {
+  // 只針對「正在語音預覽的發言人」的 index；null 代表目前沒有在預覽
+  const [previewingSpeakerIndex, setPreviewingSpeakerIndex] = useState<number | null>(null);
   const handleSpeakerChange = (index: number, field: keyof Omit<Speaker, 'id'|'color'|'dotColor'>, value: string) => {
     updateSpeaker(index, { ...speakers[index], [field]: value });
   };
@@ -223,7 +225,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
   const handlePreviewVoice = useCallback(async (speakerIndex: number) => {
     const speaker = speakers[speakerIndex];
     if (!speaker || isSynthesizingAudio) return;
-
+    setPreviewingSpeakerIndex(speakerIndex);
     setIsSynthesizingAudio(true);
     setError(null);
 
@@ -235,7 +237,15 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     try {
         const audioContentBase64 = await synthesizeSpeechInternal(textToSpeak, speaker.voice);
         if (audioContentBase64) {
-            const audioSrc = `data:audio/wav;base64,${audioContentBase64}`;
+            // 以 Blob + objectURL 方式播放，兼容性較好
+            const byteCharacters = atob(audioContentBase64);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+              byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            const blob = new Blob([byteArray], { type: 'audio/wav' });
+            const audioSrc = URL.createObjectURL(blob);
             const audio = new Audio(audioSrc);
             audio.play().catch(e => {
                 console.error("播放音頻錯誤:", e);
@@ -245,6 +255,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     } catch (e) {
         setError(e instanceof Error ? e.message : "語音預覽合成時發生未知錯誤。");
     } finally {
+        setPreviewingSpeakerIndex(null);
         setIsSynthesizingAudio(false);
     }
   }, [speakers, synthesizeSpeechInternal, setError, isSynthesizingAudio, setIsSynthesizingAudio]);
@@ -433,9 +444,9 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                     aria-label={`預覽 ${speaker.name} 的 Gemini AI 語音`}
                     disabled={isSynthesizingAudio}
                 >
-                    {isSynthesizingAudio && 
-                     speakers[speakerArrayIndex] === speaker && <Spinner/>} 
-                    {(!isSynthesizingAudio || speakers[speakerArrayIndex] !== speaker) && <PlayCircleIcon className="w-5 h-5"/>}
+                    {previewingSpeakerIndex === speakerArrayIndex && isSynthesizingAudio
+                      ? <Spinner />
+                      : <PlayCircleIcon className="w-5 h-5" />}
                 </Button>
             </div>
           </div>
