@@ -90,13 +90,13 @@ export const RightPanel: React.FC<RightPanelProps> = ({
       return null;
     }
 
+    // Use official Google endpoint
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${geminiApiKey}`;
+
     try {
-      const response = await fetch('/api/gemini/v1beta/models/gemini-2.5-flash-preview-tts:generateContent', {
+      const response = await fetch(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': geminiApiKey,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{
             parts: [{
@@ -117,9 +117,16 @@ export const RightPanel: React.FC<RightPanelProps> = ({
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        console.error("Gemini TTS API Error:", errorData);
-        throw new Error(errorData.error?.message || `Gemini TTS API 請求失敗: ${response.statusText}`);
+        const errorText = await response.text();
+        let msg = response.statusText;
+        try {
+          const errJson = JSON.parse(errorText);
+          msg = errJson.error?.message || errorText;
+        } catch {
+          msg = errorText || msg;
+        }
+        console.error('Gemini TTS API Error:', msg);
+        throw new Error(`Gemini TTS API 請求失敗: ${msg}`);
       }
 
       const result = await response.json();
@@ -143,6 +150,9 @@ export const RightPanel: React.FC<RightPanelProps> = ({
       return null;
     }
 
+    // Use official Google endpoint
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${geminiApiKey}`;
+
     const script = dialogLines.map(line => {
       const speaker = speakers.find(s => s.id === line.speakerId);
       return `${speaker?.name || 'Speaker'}: ${line.text}`;
@@ -161,12 +171,9 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     const prompt = `TTS the following conversation between ${activeSpeakers.map(s => s.name).join(' and ')}:\n${script}`;
 
     try {
-      const response = await fetch('/api/gemini/v1beta/models/gemini-2.5-flash-preview-tts:generateContent', {
+      const response = await fetch(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': geminiApiKey,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{
             parts: [{
@@ -185,8 +192,16 @@ export const RightPanel: React.FC<RightPanelProps> = ({
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error?.message || `Gemini 多人對話 TTS 失敗: ${response.statusText}`);
+        const errorText = await response.text();
+        let msg = response.statusText;
+        try {
+          const errJson = JSON.parse(errorText);
+          msg = errJson.error?.message || errorText;
+        } catch {
+          msg = errorText || msg;
+        }
+        console.error('Gemini TTS API Error:', msg);
+        throw new Error(`Gemini TTS API 請求失敗: ${msg}`);
       }
 
       const result = await response.json();
