@@ -4,6 +4,7 @@ import { AVAILABLE_VOICES, GEMINI_MODEL_TEXT } from '../constants';
 import { Button, Select, TextInput } from './shared/FormControls';
 import { ChevronDownIcon, ChevronUpIcon, Cog8ToothIcon, DocumentTextIcon, MusicalNoteIcon, UserIcon, UsersIcon, SparklesIcon, PlayCircleIcon, ClockIcon } from './icons/HeroIcons';
 import { Spinner } from './shared/Spinner';
+import { GoogleGenAI } from '@google/genai';
 
 import JSZip from 'jszip';
 
@@ -97,53 +98,30 @@ export const RightPanel: React.FC<RightPanelProps> = ({
       return null;
     }
 
-    // 修正：使用正確的 TTS 模型名稱
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${geminiApiKey}`;
-
     try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: text
-            }]
-          }],
-          // 修正：使用正確的 API 結構
-          config: {
-            response_modalities: ["AUDIO"],  // 修正：snake_case
-            speech_config: {
-              // 修正：移除不存在的 audioEncoding 字段
-              voice_config: {
-                prebuilt_voice_config: {
-                  voice_name: voiceId  // 修正：voice_name 不是 voiceName
-                }
-              }
-            }
-          }
-        }),
+      const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+      
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash-preview-tts",
+        contents: [{ parts: [{ text: text }] }],
+        config: {
+          responseModalities: ['AUDIO'],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: voiceId },
+            },
+          },
+        },
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        let msg = response.statusText;
-        try {
-          const errJson = JSON.parse(errorText);
-          msg = errJson.error?.message || errorText;
-        } catch {
-          msg = errorText || msg;
-        }
-        console.error('Gemini TTS API Error:', msg);
-        throw new Error(`Gemini TTS API 請求失敗: ${msg}`);
-      }
-
-      const result = await response.json();
-      if (result.candidates?.[0]?.content?.parts?.[0]?.inline_data?.data) {
-        const inline = result.candidates[0].content.parts[0].inline_data;
-        return { data: inline.data, mimeType: inline.mime_type || 'audio/wav' };  // 修正：mime_type
+      const data = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      if (data) {
+        return { 
+          data: data, 
+          mimeType: 'audio/wav' 
+        };
       } else {
-        console.error("Gemini TTS API 沒有返回預期的音頻內容:", result);
+        console.error("Gemini TTS API 沒有返回預期的音頻內容:", response);
         throw new Error("Gemini TTS API 沒有返回音頻內容。");
       }
     } catch (e) {
@@ -160,9 +138,6 @@ export const RightPanel: React.FC<RightPanelProps> = ({
       return null;
     }
 
-    // 修正：使用正確的 TTS 模型名稱
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${geminiApiKey}`;
-
     const script = dialogLines.map(line => {
       const speaker = speakers.find(s => s.id === line.speakerId);
       return `${speaker?.name || 'Speaker'}: ${line.text}`;
@@ -171,54 +146,35 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     const activeSpeakers = scriptMode === ScriptMode.SINGLE ? [speakers[0]] : speakers.slice(0, 2);
     const speakerConfigs = activeSpeakers.map(speaker => ({
       speaker: speaker.name,
-      voice_config: {  // 修正：snake_case
-        prebuilt_voice_config: {
-          voice_name: speaker.voice  // 修正：voice_name
-        }
+      voiceConfig: {
+        prebuiltVoiceConfig: { voiceName: speaker.voice }
       }
     }));
 
     const prompt = `TTS the following conversation between ${activeSpeakers.map(s => s.name).join(' and ')}:\n${script}`;
 
     try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: prompt
-            }]
-          }],
-          // 修正：使用正確的 API 結構
-          config: {
-            response_modalities: ["AUDIO"],  // 修正：snake_case
-            speech_config: {
-              multi_speaker_voice_config: {  // 修正：snake_case
-                speaker_voice_configs: speakerConfigs  // 修正：snake_case
-              }
+      const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+      
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash-preview-tts",
+        contents: [{ parts: [{ text: prompt }] }],
+        config: {
+          responseModalities: ['AUDIO'],
+          speechConfig: {
+            multiSpeakerVoiceConfig: {
+              speakerVoiceConfigs: speakerConfigs
             }
           }
-        }),
+        }
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        let msg = response.statusText;
-        try {
-          const errJson = JSON.parse(errorText);
-          msg = errJson.error?.message || errorText;
-        } catch {
-          msg = errorText || msg;
-        }
-        console.error('Gemini TTS API Error:', msg);
-        throw new Error(`Gemini TTS API 請求失敗: ${msg}`);
-      }
-
-      const result = await response.json();
-      if (result.candidates?.[0]?.content?.parts?.[0]?.inline_data?.data) {
-        const inline = result.candidates[0].content.parts[0].inline_data;
-        return { data: inline.data, mimeType: inline.mime_type || 'audio/wav' };  // 修正：mime_type
+      const data = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      if (data) {
+        return { 
+          data: data, 
+          mimeType: 'audio/wav' 
+        };
       } else {
         throw new Error("Gemini TTS 沒有返回音頻內容。");
       }
