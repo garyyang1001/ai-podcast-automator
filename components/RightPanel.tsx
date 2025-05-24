@@ -13,7 +13,11 @@ import { ChevronDownIcon, ChevronUpIcon, Cog8ToothIcon, DocumentTextIcon, Musica
 import { Spinner } from './shared/Spinner';
 import { GoogleGenAI } from '@google/genai';
 
-import JSZip from 'jszip';
+// 🔧 修復：只在需要時動態導入 JSZip，避免未使用警告
+const loadJSZip = async () => {
+  const JSZip = (await import('jszip')).default;
+  return JSZip;
+};
 
 // ---- Local helper type ----
 type SynthesizedAudio = { data: string; mimeType: string };
@@ -495,6 +499,8 @@ export const RightPanel: React.FC<RightPanelProps> = ({
 
         if (!hasErrorOccurred && audioSegments.length > 0) {
           try {
+            // 🔧 修復：動態載入 JSZip 以避免未使用警告
+            const JSZip = await loadJSZip();
             const zip = new JSZip();
             audioSegments.forEach(segment => {
               zip.file(segment.name, segment.data);
