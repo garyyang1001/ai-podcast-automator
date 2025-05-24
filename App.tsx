@@ -74,59 +74,63 @@ const App: React.FC = () => {
     setActualAudioDurations(prev => ({ ...prev, [lineId]: duration }));
   }, []);
   
-  const handleFetchWebContent = useCallback(async (url: string) => {
-    if (!url) {
-      setError("請輸入要抓取內容的URL。");
-      return;
-    }
-    setIsFetchingWebContent(true);
-    setError(null);
+// 在 App.tsx 中的 handleFetchWebContent 函數修正
 
-    const firecrawlApiKey = getEnvVar('FIRECRAWL_API_KEY');
-    if (!firecrawlApiKey) {
-      setError("Firecrawl API Key 未找到。請在 .env 檔案中設定 VITE_FIRECRAWL_API_KEY。");
-      setIsFetchingWebContent(false);
-      return;
-    }
+const handleFetchWebContent = useCallback(async (url: string) => {
+  if (!url) {
+    setError("請輸入要抓取內容的URL。");
+    return;
+  }
+  setIsFetchingWebContent(true);
+  setError(null);
 
-    try {
-      // 使用代理路徑
-      const response = await fetch('/api/firecrawl/v1/scrape', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${firecrawlApiKey}`,
-        },
-        body: JSON.stringify({ url: url }),
-      });
+  const firecrawlApiKey = getEnvVar('FIRECRAWL_API_KEY');
+  if (!firecrawlApiKey) {
+    setError("Firecrawl API Key 未找到。請在 .env 檔案中設定 VITE_FIRECRAWL_API_KEY。");
+    setIsFetchingWebContent(false);
+    return;
+  }
 
-      if (!response.ok) {
-        let errorDetails = `抓取內容失敗: ${response.statusText}`;
-        try {
-            const errorData = await response.json();
-            errorDetails = errorData.error || errorDetails;
-        } catch (e) {
-            // Ignore if response is not JSON
-        }
-        throw new Error(errorDetails);
+  try {
+    // 修正：直接調用 Firecrawl API 而不是代理
+    const response = await fetch('https://api.firecrawl.dev/v1/scrape', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${firecrawlApiKey}`,
+      },
+      body: JSON.stringify({ 
+        url: url,
+        formats: ['markdown']  // 添加格式指定
+      }),
+    });
+
+    if (!response.ok) {
+      let errorDetails = `抓取內容失敗: ${response.statusText}`;
+      try {
+          const errorData = await response.json();
+          errorDetails = errorData.error || errorDetails;
+      } catch (e) {
+          // Ignore if response is not JSON
       }
-
-      const result: FirecrawlApiResponse = await response.json();
-
-      if (result.success && result.data?.markdown) { 
-        setWebContentSource(prev => ({ ...prev, url, text: result.data!.markdown }));
-        clearAudioDurations();
-      } else {
-        throw new Error(result.error || "Firecrawl API 沒有成功返回內容。請確保API回應格式正確（包含markdown欄位）。");
-      }
-    } catch (e) {
-      console.error("抓取網頁內容錯誤:", e);
-      setError(e instanceof Error ? e.message : "抓取網頁內容時發生未知錯誤。");
-    } finally {
-      setIsFetchingWebContent(false);
+      throw new Error(errorDetails);
     }
-  }, [clearAudioDurations]);
 
+    const result: FirecrawlApiResponse = await response.json();
+
+    if (result.success && result.data?.markdown) { 
+      setWebContentSource(prev => ({ ...prev, url, text: result.data!.markdown }));
+      clearAudioDurations();
+    } else {
+      throw new Error(result.error || "Firecrawl API 沒有成功返回內容。請確保API回應格式正確（包含markdown欄位）。");
+    }
+  } catch (e) {
+    console.error("抓取網頁內容錯誤:", e);
+    setError(e instanceof Error ? e.message : "抓取網頁內容時發生未知錯誤。");
+  } finally {
+    setIsFetchingWebContent(false);
+  }
+}, [clearAudioDurations]);
   const handleGenerateScript = useCallback(async () => {
     setIsLoading(true);
     setError(null);

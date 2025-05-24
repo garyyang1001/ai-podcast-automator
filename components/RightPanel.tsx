@@ -84,6 +84,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
 }) => {
   // 只針對「正在語音預覽的發言人」的 index；null 代表目前沒有在預覽
   const [previewingSpeakerIndex, setPreviewingSpeakerIndex] = useState<number | null>(null);
+  
   const handleSpeakerChange = (index: number, field: keyof Omit<Speaker, 'id'|'color'|'dotColor'>, value: string) => {
     updateSpeaker(index, { ...speakers[index], [field]: value });
   };
@@ -96,7 +97,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
       return null;
     }
 
-    // Use official Google endpoint
+    // 修正：使用正確的 TTS 模型名稱
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${geminiApiKey}`;
 
     try {
@@ -109,13 +110,14 @@ export const RightPanel: React.FC<RightPanelProps> = ({
               text: text
             }]
           }],
-          generationConfig: {
-            responseModalities: ["AUDIO"],
-            speechConfig: {
-              audioEncoding: "MP3",
-              voiceConfig: {
-                prebuiltVoiceConfig: {
-                  voiceName: voiceId
+          // 修正：使用正確的 API 結構
+          config: {
+            response_modalities: ["AUDIO"],  // 修正：snake_case
+            speech_config: {
+              // 修正：移除不存在的 audioEncoding 字段
+              voice_config: {
+                prebuilt_voice_config: {
+                  voice_name: voiceId  // 修正：voice_name 不是 voiceName
                 }
               }
             }
@@ -137,9 +139,9 @@ export const RightPanel: React.FC<RightPanelProps> = ({
       }
 
       const result = await response.json();
-      if (result.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data) {
-        const inline = result.candidates[0].content.parts[0].inlineData;
-        return { data: inline.data, mimeType: inline.mimeType || 'audio/mpeg' };
+      if (result.candidates?.[0]?.content?.parts?.[0]?.inline_data?.data) {
+        const inline = result.candidates[0].content.parts[0].inline_data;
+        return { data: inline.data, mimeType: inline.mime_type || 'audio/wav' };  // 修正：mime_type
       } else {
         console.error("Gemini TTS API 沒有返回預期的音頻內容:", result);
         throw new Error("Gemini TTS API 沒有返回音頻內容。");
@@ -158,7 +160,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
       return null;
     }
 
-    // Use official Google endpoint
+    // 修正：使用正確的 TTS 模型名稱
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${geminiApiKey}`;
 
     const script = dialogLines.map(line => {
@@ -169,9 +171,9 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     const activeSpeakers = scriptMode === ScriptMode.SINGLE ? [speakers[0]] : speakers.slice(0, 2);
     const speakerConfigs = activeSpeakers.map(speaker => ({
       speaker: speaker.name,
-      voiceConfig: {
-        prebuiltVoiceConfig: {
-          voiceName: speaker.voice
+      voice_config: {  // 修正：snake_case
+        prebuilt_voice_config: {
+          voice_name: speaker.voice  // 修正：voice_name
         }
       }
     }));
@@ -188,12 +190,12 @@ export const RightPanel: React.FC<RightPanelProps> = ({
               text: prompt
             }]
           }],
-          generationConfig: {
-            responseModalities: ["AUDIO"],
-            speechConfig: {
-              audioEncoding: "MP3",
-              multiSpeakerVoiceConfig: {
-                speakerVoiceConfigs: speakerConfigs
+          // 修正：使用正確的 API 結構
+          config: {
+            response_modalities: ["AUDIO"],  // 修正：snake_case
+            speech_config: {
+              multi_speaker_voice_config: {  // 修正：snake_case
+                speaker_voice_configs: speakerConfigs  // 修正：snake_case
               }
             }
           }
@@ -214,9 +216,9 @@ export const RightPanel: React.FC<RightPanelProps> = ({
       }
 
       const result = await response.json();
-      if (result.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data) {
-        const inline = result.candidates[0].content.parts[0].inlineData;
-        return { data: inline.data, mimeType: inline.mimeType || 'audio/mpeg' };
+      if (result.candidates?.[0]?.content?.parts?.[0]?.inline_data?.data) {
+        const inline = result.candidates[0].content.parts[0].inline_data;
+        return { data: inline.data, mimeType: inline.mime_type || 'audio/wav' };  // 修正：mime_type
       } else {
         throw new Error("Gemini TTS 沒有返回音頻內容。");
       }
@@ -294,7 +296,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
 
           const link = document.createElement('a');
           link.href = URL.createObjectURL(blob);
-          const ext = synthesized.mimeType.includes('mpeg') ? 'mp3' : 'wav';
+          const ext = synthesized.mimeType.includes('wav') ? 'wav' : 'mp3';
           link.download = `gemini_podcast_full_conversation.${ext}`;
           document.body.appendChild(link);
           link.click();
@@ -338,7 +340,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
               onAudioSegmentSynthesized(line.id, lineDuration);
 
               const safeSpeakerName = speaker.name.replace(/[^\w\s\u4e00-\u9fa5]/gi, '').replace(/\s+/g, '_'); 
-              const ext = synthesized.mimeType.includes('mpeg') ? 'mp3' : 'wav';
+              const ext = synthesized.mimeType.includes('wav') ? 'wav' : 'mp3';
               const fileName = `podcast_segment_${String(i + 1).padStart(2, '0')}_${safeSpeakerName}.${ext}`;
               audioSegments.push({ name: fileName, data: blob });
             } else {
@@ -424,43 +426,44 @@ export const RightPanel: React.FC<RightPanelProps> = ({
           if (!speaker) return null; 
 
           return (
-          <div key={speaker.id} className="p-3 border border-slate-700 rounded-md bg-slate-800">
-            <div className="flex items-center mb-2">
-              <span className={`w-3 h-3 rounded-full ${speaker.dotColor} mr-2`}></span>
-              <h4 className="font-semibold text-sm text-slate-300">發言人 {originalIndex + 1} 設定</h4>
-            </div>
-            <TextInput
-              label="名稱 (Name)"
-              id={`speaker-name-${speaker.id}`}
-              value={speaker.name}
-              onChange={(e) => handleSpeakerChange(speakerArrayIndex, 'name', e.target.value)}
-              placeholder={`例如：主持人 ${originalIndex + 1}`}
-            />
-            <div className="flex items-end space-x-2">
+            <div key={speaker.id} className="p-3 border border-slate-700 rounded-md bg-slate-800">
+              <div className="flex items-center mb-2">
+                <span className={`w-3 h-3 rounded-full ${speaker.dotColor} mr-2`}></span>
+                <h4 className="font-semibold text-sm text-slate-300">發言人 {originalIndex + 1} 設定</h4>
+              </div>
+              <TextInput
+                label="名稱 (Name)"
+                id={`speaker-name-${speaker.id}`}
+                value={speaker.name}
+                onChange={(e) => handleSpeakerChange(speakerArrayIndex, 'name', e.target.value)}
+                placeholder={`例如：主持人 ${originalIndex + 1}`}
+              />
+              <div className="flex items-end space-x-2">
                 <Select
-                    label="🎤 Gemini AI 原生語音 (30種高品質選項)"
-                    id={`speaker-voice-style-${speaker.id}`}
-                    value={speaker.voice} 
-                    onChange={(e) => handleSpeakerChange(speakerArrayIndex, 'voice', e.target.value)}
-                    options={AVAILABLE_VOICES.map(v => ({ value: v.id, label: v.name }))}
-                    className="flex-grow"
-                    helperText="✨ 使用 Gemini AI 原生語音技術，支援多人對話、風格控制和 24 種語言。"
+                  label="🎤 Gemini AI 原生語音 (30種高品質選項)"
+                  id={`speaker-voice-style-${speaker.id}`}
+                  value={speaker.voice} 
+                  onChange={(e) => handleSpeakerChange(speakerArrayIndex, 'voice', e.target.value)}
+                  options={AVAILABLE_VOICES.map(v => ({ value: v.id, label: v.name }))}
+                  className="flex-grow"
+                  helperText="✨ 使用 Gemini AI 原生語音技術，支援多人對話、風格控制和 24 種語言。"
                 />
                 <Button 
-                    onClick={() => handlePreviewVoice(speakerArrayIndex)} 
-                    variant="outline" 
-                    size="md" 
-                    className="mb-3 flex-shrink-0"
-                    aria-label={`預覽 ${speaker.name} 的 Gemini AI 語音`}
-                    disabled={isSynthesizingAudio}
+                  onClick={() => handlePreviewVoice(speakerArrayIndex)} 
+                  variant="outline" 
+                  size="md" 
+                  className="mb-3 flex-shrink-0"
+                  aria-label={`預覽 ${speaker.name} 的 Gemini AI 語音`}
+                  disabled={isSynthesizingAudio}
                 >
-                    {previewingSpeakerIndex === speakerArrayIndex && isSynthesizingAudio
-                      ? <Spinner />
-                      : <PlayCircleIcon className="w-5 h-5" />}
+                  {previewingSpeakerIndex === speakerArrayIndex && isSynthesizingAudio
+                    ? <Spinner />
+                    : <PlayCircleIcon className="w-5 h-5" />}
                 </Button>
+              </div>
             </div>
-          </div>
-        )})}
+          );
+        })}
       </AccordionSection>
       
       <div className="space-y-3 pt-3">
