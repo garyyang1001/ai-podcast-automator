@@ -37,21 +37,61 @@ export const AVAILABLE_VOICES: VoiceOption[] = [
   { id: 'Sulafar', name: '✨ Sulafar (溫暖風格)' },
 ];
 
-// 更新預設發言人使用新的Gemini TTS語音
+export const EMOTION_OPTIONS = [
+  { value: 'neutral', label: '😐 正常' },
+  { value: 'excited', label: '🤩 興奮' },
+  { value: 'calm', label: '😌 平靜' },
+  { value: 'professional', label: '💼 專業' },
+  { value: 'friendly', label: '😊 友善' },
+  { value: 'enthusiastic', label: '🔥 熱情' }
+];
+
+export const PACE_OPTIONS = [
+  { value: 'very-slow', label: '🐌 很慢' },
+  { value: 'slow', label: '🚶 慢' },
+  { value: 'normal', label: '🚶‍♂️ 正常' },
+  { value: 'fast', label: '🏃 快' },
+  { value: 'very-fast', label: '🏃‍♂️💨 很快' }
+];
+
+export const TONE_OPTIONS = [
+  { value: 'low', label: '🔉 低沉' },
+  { value: 'normal', label: '🔊 正常' },
+  { value: 'high', label: '🔊⬆️ 高亢' }
+];
+
+export const STYLE_OPTIONS = [
+  { value: 'normal', label: '💬 正常' },
+  { value: 'whisper', label: '🤫 輕語' },
+  { value: 'strong', label: '💪 有力' },
+  { value: 'gentle', label: '🌸 溫柔' }
+];
+
+// 更新預設發言人使用新的Gemini TTS語音和語音控制
 export const INITIAL_SPEAKERS: Speaker[] = [
   { 
     id: 'speaker1', 
     name: '主持人 Alpha', 
     voice: AVAILABLE_VOICES[0].id, // 使用 Zephyr (明亮風格)
     color: 'text-yellow-400', 
-    dotColor: 'bg-yellow-400' 
+    dotColor: 'bg-yellow-400',
+    // 🆕 新增語音控制預設值
+    emotion: 'friendly',      // 友善的主持人
+    pace: 'normal',          // 正常語速
+    tone: 'normal',          // 正常音調
+    style: 'normal'          // 正常風格
   },
   { 
     id: 'speaker2', 
     name: '來賓 Beta', 
     voice: AVAILABLE_VOICES[3].id, // 使用 Kore (堅定風格)
     color: 'text-purple-400', 
-    dotColor: 'bg-purple-400' 
+    dotColor: 'bg-purple-400',
+    // 🆕 新增語音控制預設值
+    emotion: 'professional',  // 專業的來賓
+    pace: 'normal',          // 正常語速
+    tone: 'low',             // 低沉音調
+    style: 'normal'          // 正常風格
   },
 ];
 

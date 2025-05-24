@@ -1,6 +1,13 @@
 import React, { useState, useCallback } from 'react';
 import { Speaker, SeoMeta, ScriptMode, DialogLine } from '../types';
-import { AVAILABLE_VOICES, GEMINI_MODEL_TEXT } from '../constants';
+import { 
+  AVAILABLE_VOICES, 
+  GEMINI_MODEL_TEXT,
+  EMOTION_OPTIONS,
+  PACE_OPTIONS,
+  TONE_OPTIONS,
+  STYLE_OPTIONS
+} from '../constants';
 import { Button, Select, TextInput } from './shared/FormControls';
 import { ChevronDownIcon, ChevronUpIcon, Cog8ToothIcon, DocumentTextIcon, MusicalNoteIcon, UserIcon, UsersIcon, SparklesIcon, PlayCircleIcon, ClockIcon } from './icons/HeroIcons';
 import { Spinner } from './shared/Spinner';
@@ -38,6 +45,57 @@ const getEnvVar = (key: string): string | undefined => {
     return (window as any)?.env?.[key] || (import.meta as any)?.env?.[`VITE_${key}`] || (import.meta as any)?.env?.[key];
   }
   return process.env[key] || process.env[`VITE_${key}`];
+};
+
+// 🆕 建立語音指示函數
+const buildVoiceInstruction = (speaker: Speaker): string => {
+  const instructions: string[] = [];
+  
+  // 情緒映射
+  const emotionMap: Record<string, string> = {
+    'excited': 'sound excited and energetic',
+    'calm': 'sound calm and peaceful',
+    'professional': 'sound professional and authoritative',
+    'friendly': 'sound friendly and warm',
+    'enthusiastic': 'sound enthusiastic and passionate'
+  };
+  
+  // 語速映射
+  const paceMap: Record<string, string> = {
+    'very-slow': 'speak very slowly and clearly',
+    'slow': 'speak slowly',
+    'fast': 'speak at a fast pace while remaining clear',
+    'very-fast': 'speak as fast as possible while remaining intelligible'
+  };
+  
+  // 音調映射
+  const toneMap: Record<string, string> = {
+    'low': 'use a lower pitch',
+    'high': 'use a higher pitch'
+  };
+  
+  // 風格映射
+  const styleMap: Record<string, string> = {
+    'whisper': 'speak in a gentle whisper',
+    'strong': 'speak with strong emphasis',
+    'gentle': 'speak gently and softly'
+  };
+  
+  // 組合指示
+  if (speaker.emotion && speaker.emotion !== 'neutral') {
+    instructions.push(emotionMap[speaker.emotion]);
+  }
+  if (speaker.pace && speaker.pace !== 'normal') {
+    instructions.push(paceMap[speaker.pace]);
+  }
+  if (speaker.tone && speaker.tone !== 'normal') {
+    instructions.push(toneMap[speaker.tone]);
+  }
+  if (speaker.style && speaker.style !== 'normal') {
+    instructions.push(styleMap[speaker.style]);
+  }
+  
+  return instructions.length > 0 ? `Make ${speaker.name} ${instructions.join(', ')}.` : '';
 };
 
 // 修正：添加 PCM 到 WAV 轉換函數
@@ -124,7 +182,8 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     updateSpeaker(index, { ...speakers[index], [field]: value });
   };
 
-  const synthesizeWithGeminiTTS = useCallback(async (text: string, voiceId: string): Promise<SynthesizedAudio | null> => {
+  // 🔄 修改後的語音合成函數 - 支援語音指示
+  const synthesizeWithGeminiTTS = useCallback(async (text: string, speaker: Speaker): Promise<SynthesizedAudio | null> => {
     const geminiApiKey = getEnvVar('API_KEY');
 
     if (!geminiApiKey) {
@@ -135,14 +194,18 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     try {
       const ai = new GoogleGenAI({ apiKey: geminiApiKey });
       
+      // 🆕 建立語音指示
+      const voiceInstruction = buildVoiceInstruction(speaker);
+      const enhancedText = voiceInstruction ? `${voiceInstruction}\n\n"${text}"` : text;
+      
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash-preview-tts",
-        contents: [{ parts: [{ text: text }] }],
+        contents: [{ parts: [{ text: enhancedText }] }],
         config: {
-          responseModalities: ['Audio'], // 修正：使用 'Audio' 而不是 'AUDIO'
+          responseModalities: ['Audio'],
           speechConfig: {
             voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: voiceId },
+              prebuiltVoiceConfig: { voiceName: speaker.voice },
             },
           },
         },
@@ -150,7 +213,6 @@ export const RightPanel: React.FC<RightPanelProps> = ({
 
       const inlineData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData;
       if (inlineData?.data) {
-        // 修正：直接返回原始數據，讓調用方處理格式轉換
         return { 
           data: inlineData.data, 
           mimeType: inlineData.mimeType || 'audio/L16;codec=pcm;rate=24000'
@@ -165,6 +227,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     }
   }, [setError]);
 
+  // 🔄 修改後的多人對話合成函數 - 支援語音指示
   const synthesizeMultiSpeakerWithGemini = useCallback(async (dialogLines: DialogLine[], speakers: Speaker[]): Promise<SynthesizedAudio | null> => {
     const geminiApiKey = getEnvVar('API_KEY');
 
@@ -179,6 +242,19 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     }).join('\n');
 
     const activeSpeakers = scriptMode === ScriptMode.SINGLE ? [speakers[0]] : speakers.slice(0, 2);
+    
+    // 🆕 建立每個發言人的語音指示
+    const speakerInstructions = activeSpeakers
+      .map(speaker => buildVoiceInstruction(speaker))
+      .filter(instruction => instruction.length > 0);
+    
+    // 🆕 組合完整的提示詞
+    let enhancedPrompt = '';
+    if (speakerInstructions.length > 0) {
+      enhancedPrompt = `${speakerInstructions.join(' ')}\n\n`;
+    }
+    enhancedPrompt += `TTS the following conversation between ${activeSpeakers.map(s => s.name).join(' and ')}:\n${script}`;
+
     const speakerConfigs = activeSpeakers.map(speaker => ({
       speaker: speaker.name,
       voiceConfig: {
@@ -186,16 +262,14 @@ export const RightPanel: React.FC<RightPanelProps> = ({
       }
     }));
 
-    const prompt = `TTS the following conversation between ${activeSpeakers.map(s => s.name).join(' and ')}:\n${script}`;
-
     try {
       const ai = new GoogleGenAI({ apiKey: geminiApiKey });
       
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash-preview-tts",
-        contents: [{ parts: [{ text: prompt }] }],
+        contents: [{ parts: [{ text: enhancedPrompt }] }],
         config: {
-          responseModalities: ['Audio'], // 修正：使用 'Audio' 而不是 'AUDIO'
+          responseModalities: ['Audio'],
           speechConfig: {
             multiSpeakerVoiceConfig: {
               speakerVoiceConfigs: speakerConfigs
@@ -219,8 +293,8 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     }
   }, [setError, scriptMode]);
 
-  const synthesizeSpeechInternal = useCallback(async (text: string, voiceId: string): Promise<SynthesizedAudio | null> => {
-    return await synthesizeWithGeminiTTS(text, voiceId);
+  const synthesizeSpeechInternal = useCallback(async (text: string, speaker: Speaker): Promise<SynthesizedAudio | null> => {
+    return await synthesizeWithGeminiTTS(text, speaker);
   }, [synthesizeWithGeminiTTS]);
 
   const handlePreviewVoice = useCallback(async (speakerIndex: number) => {
@@ -233,19 +307,40 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     const voiceOption = AVAILABLE_VOICES.find(v => v.id === speaker.voice);
     const voiceStyleName = voiceOption ? voiceOption.name : "預設風格";
     const speakerName = speaker.name || `發言人 ${speakerIndex + 1}`;
-    const textToSpeak = `這是 ${speakerName} 使用 ${voiceStyleName} 風格設定的語音預覽。您好，這是由 Gemini AI 原生語音技術產生的高品質語音。`;
+    
+    // 🆕 根據語音設定調整預覽文字
+    let previewText = `這是 ${speakerName} 使用 ${voiceStyleName} 的語音預覽。`;
+    
+    // 根據情緒調整預覽內容
+    switch (speaker.emotion) {
+      case 'excited':
+        previewText += "我感到非常興奮！這個語音效果真是太棒了！";
+        break;
+      case 'calm':
+        previewText += "讓我們以平靜的心情來體驗這個美好的語音效果。";
+        break;
+      case 'professional':
+        previewText += "根據專業分析，這是一個高品質的語音合成技術。";
+        break;
+      case 'friendly':
+        previewText += "很高興與您分享這個友善溫暖的語音體驗。";
+        break;
+      case 'enthusiastic':
+        previewText += "讓我們一起熱情地探索這個驚人的語音技術！";
+        break;
+      default:
+        previewText += "您好，這是由 Gemini AI 原生語音技術產生的高品質語音。";
+    }
     
     try {
-        const synthesized = await synthesizeSpeechInternal(textToSpeak, speaker.voice);
+        const synthesized = await synthesizeSpeechInternal(previewText, speaker);
         if (synthesized) {
-            // 修正：正確處理 PCM 音頻數據
             const byteCharacters = atob(synthesized.data);
             const pcmData = new Uint8Array(byteCharacters.length);
             for (let i = 0; i < byteCharacters.length; i++) {
               pcmData[i] = byteCharacters.charCodeAt(i);
             }
             
-            // 轉換 PCM 為 WAV 格式
             const wavData = convertPCMToWAV(pcmData);
             const blob = new Blob([wavData], { type: 'audio/wav' });
             const audioSrc = URL.createObjectURL(blob);
@@ -279,14 +374,12 @@ export const RightPanel: React.FC<RightPanelProps> = ({
         const synthesized = await synthesizeMultiSpeakerWithGemini(dialogLines, speakers);
         
         if (synthesized) {
-          // 修正：正確處理 PCM 音頻數據並轉換為 WAV
           const byteCharacters = atob(synthesized.data);
           const pcmData = new Uint8Array(byteCharacters.length);
           for (let j = 0; j < byteCharacters.length; j++) {
             pcmData[j] = byteCharacters.charCodeAt(j);
           }
           
-          // 轉換 PCM 為 WAV 格式
           const wavData = convertPCMToWAV(pcmData);
           const blob = new Blob([wavData], { type: 'audio/wav' });
 
@@ -320,17 +413,15 @@ export const RightPanel: React.FC<RightPanelProps> = ({
           }
           
           try {
-            const synthesized = await synthesizeSpeechInternal(line.text, speaker.voice);
+            const synthesized = await synthesizeSpeechInternal(line.text, speaker);
 
             if (synthesized) {
-              // 修正：正確處理 PCM 音頻數據並轉換為 WAV
               const byteCharacters = atob(synthesized.data);
               const pcmData = new Uint8Array(byteCharacters.length);
               for (let j = 0; j < byteCharacters.length; j++) {
                 pcmData[j] = byteCharacters.charCodeAt(j);
               }
               
-              // 轉換 PCM 為 WAV 格式
               const wavData = convertPCMToWAV(pcmData);
               const blob = new Blob([wavData], { type: 'audio/wav' });
               
@@ -415,7 +506,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
             <span className="w-2 h-2 rounded-full bg-emerald-400 mr-2"></span>
             <span className="text-emerald-400 font-semibold text-sm">🚀 Gemini AI 原生 TTS 已啟用</span>
           </div>
-          <p className="text-xs text-slate-400 mt-1">✨ 30種高品質語音 | 🎭 智能多人對話 | 🌍 24種語言支援</p>
+          <p className="text-xs text-slate-400 mt-1">✨ 30種高品質語音 | 🎭 智能多人對話 | 🌍 24種語言支援 | 🎛️ 精細語音控制</p>
         </div>
 
         {(scriptMode === ScriptMode.SINGLE ? [speakers[0]] : speakers).map((speaker, originalIndex) => {
@@ -428,6 +519,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                 <span className={`w-3 h-3 rounded-full ${speaker.dotColor} mr-2`}></span>
                 <h4 className="font-semibold text-sm text-slate-300">發言人 {originalIndex + 1} 設定</h4>
               </div>
+              
               <TextInput
                 label="名稱 (Name)"
                 id={`speaker-name-${speaker.id}`}
@@ -435,6 +527,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                 onChange={(e) => handleSpeakerChange(speakerArrayIndex, 'name', e.target.value)}
                 placeholder={`例如：主持人 ${originalIndex + 1}`}
               />
+              
               <div className="flex items-end space-x-2">
                 <Select
                   label="🎤 Gemini AI 原生語音 (30種高品質選項)"
@@ -457,6 +550,58 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                     ? <Spinner />
                     : <PlayCircleIcon className="w-5 h-5" />}
                 </Button>
+              </div>
+
+              {/* 🆕 新增語音品質控制 */}
+              <div className="mt-3 space-y-2">
+                <h5 className="text-xs font-medium text-slate-400">🎭 語音風格設定 (Voice Style Controls)</h5>
+                
+                <div className="grid grid-cols-2 gap-2">
+                  <Select
+                    label="情緒"
+                    id={`speaker-emotion-${speaker.id}`}
+                    value={speaker.emotion || 'neutral'}
+                    onChange={(e) => handleSpeakerChange(speakerArrayIndex, 'emotion', e.target.value)}
+                    options={EMOTION_OPTIONS}
+                  />
+                  <Select
+                    label="語速"
+                    id={`speaker-pace-${speaker.id}`}
+                    value={speaker.pace || 'normal'}
+                    onChange={(e) => handleSpeakerChange(speakerArrayIndex, 'pace', e.target.value)}
+                    options={PACE_OPTIONS}
+                  />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-2">
+                  <Select
+                    label="音調"
+                    id={`speaker-tone-${speaker.id}`}
+                    value={speaker.tone || 'normal'}
+                    onChange={(e) => handleSpeakerChange(speakerArrayIndex, 'tone', e.target.value)}
+                    options={TONE_OPTIONS}
+                  />
+                  <Select
+                    label="風格"
+                    id={`speaker-style-${speaker.id}`}
+                    value={speaker.style || 'normal'}
+                    onChange={(e) => handleSpeakerChange(speakerArrayIndex, 'style', e.target.value)}
+                    options={STYLE_OPTIONS}
+                  />
+                </div>
+                
+                {/* 🎯 語音設定預覽提示 */}
+                {(speaker.emotion !== 'neutral' || speaker.pace !== 'normal' || speaker.tone !== 'normal' || speaker.style !== 'normal') && (
+                  <div className="mt-2 p-2 bg-blue-900/30 border border-blue-600/50 rounded-md">
+                    <p className="text-xs text-blue-300">
+                      🎨 <strong>語音效果預覽：</strong>
+                      {speaker.emotion && speaker.emotion !== 'neutral' && ` ${EMOTION_OPTIONS.find(e => e.value === speaker.emotion)?.label}`}
+                      {speaker.pace && speaker.pace !== 'normal' && ` ${PACE_OPTIONS.find(p => p.value === speaker.pace)?.label}`}
+                      {speaker.tone && speaker.tone !== 'normal' && ` ${TONE_OPTIONS.find(t => t.value === speaker.tone)?.label}`}
+                      {speaker.style && speaker.style !== 'normal' && ` ${STYLE_OPTIONS.find(s => s.value === speaker.style)?.label}`}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           );
@@ -501,7 +646,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
           disabled={dialogLines.length === 0 || isSynthesizingAudio}
         >
          {isSynthesizingAudio ? <Spinner/> : <MusicalNoteIcon className="w-5 h-5 mr-2"/>} 
-         🎭 產生 AI Podcast 語音 (智能多人對話)
+         🎭 產生 AI Podcast 語音 (智能多人對話 + 精細風格控制)
         </Button>
         <TextInput
           label="RSS Feed 發佈網址 (RSS Feed URL - for reference)"

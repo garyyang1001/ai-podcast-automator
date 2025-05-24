@@ -4,6 +4,11 @@ export interface Speaker {
   voice: string; 
   color: string; 
   dotColor: string;
+  // 🆕 新增語音控制欄位
+  emotion?: string;     // 情緒：興奮、平靜、專業、友善等
+  pace?: string;        // 語速：很慢、慢、正常、快、很快
+  tone?: string;        // 音調：低沉、正常、高亢
+  style?: string;       // 風格：輕語、正常、有力、耳語
 }
 
 export interface DialogLine {
