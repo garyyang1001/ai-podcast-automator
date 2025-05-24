@@ -47,41 +47,41 @@ const getEnvVar = (key: string): string | undefined => {
   return process.env[key] || process.env[`VITE_${key}`];
 };
 
-// 🆕 建立語音指示函數
+// 🆕 增強版語音指示函數 - 更明確的指示詞
 const buildVoiceInstruction = (speaker: Speaker): string => {
   const instructions: string[] = [];
   
-  // 情緒映射
+  // 情緒映射 - 更具體的描述
   const emotionMap: Record<string, string> = {
-    'excited': 'sound excited and energetic',
-    'calm': 'sound calm and peaceful',
-    'professional': 'sound professional and authoritative',
-    'friendly': 'sound friendly and warm',
-    'enthusiastic': 'sound enthusiastic and passionate'
+    'excited': 'sound very excited and energetic with high enthusiasm',
+    'calm': 'sound calm, peaceful and relaxed',
+    'professional': 'sound professional, authoritative and business-like',
+    'friendly': 'sound friendly, warm and welcoming',
+    'enthusiastic': 'sound enthusiastic, passionate and animated'
   };
   
-  // 語速映射
+  // 語速映射 - 更明確的指示
   const paceMap: Record<string, string> = {
-    'very-slow': 'speak very slowly and clearly',
-    'slow': 'speak slowly',
-    'fast': 'speak at a fast pace while remaining clear',
-    'very-fast': 'speak as fast as possible while remaining intelligible'
+    'very-slow': 'speak very slowly and deliberately with clear pauses between words',
+    'slow': 'speak slowly and carefully with measured pace',
+    'fast': 'speak at a fast pace while maintaining clarity and intelligibility',
+    'very-fast': 'speak as quickly as possible while remaining completely intelligible'
   };
   
   // 音調映射
   const toneMap: Record<string, string> = {
-    'low': 'use a lower pitch',
-    'high': 'use a higher pitch'
+    'low': 'use a deep, lower pitch voice',
+    'high': 'use a higher pitch, brighter voice'
   };
   
-  // 風格映射
+  // 風格映射 - 更具體的風格描述
   const styleMap: Record<string, string> = {
-    'whisper': 'speak in a gentle whisper',
-    'strong': 'speak with strong emphasis',
-    'gentle': 'speak gently and softly'
+    'whisper': 'speak in a soft, gentle whisper as if sharing a secret',
+    'strong': 'speak with strong emphasis and powerful delivery',
+    'gentle': 'speak very gently and softly with tender emotion'
   };
   
-  // 組合指示
+  // 組合指示 - 確保每個指示都很明確
   if (speaker.emotion && speaker.emotion !== 'neutral') {
     instructions.push(emotionMap[speaker.emotion]);
   }
@@ -95,7 +95,12 @@ const buildVoiceInstruction = (speaker: Speaker): string => {
     instructions.push(styleMap[speaker.style]);
   }
   
-  return instructions.length > 0 ? `Make ${speaker.name} ${instructions.join(', ')}.` : '';
+  // 🆕 確保指示詞有效性
+  if (instructions.length > 0) {
+    return `IMPORTANT: Make ${speaker.name} ${instructions.join(', and ')}. Please follow these voice instructions precisely.`;
+  }
+  
+  return '';
 };
 
 // 修正：添加 PCM 到 WAV 轉換函數
@@ -182,7 +187,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     updateSpeaker(index, { ...speakers[index], [field]: value });
   };
 
-  // 🔄 修改後的語音合成函數 - 支援語音指示
+  // 🔍 調試版語音合成函數 - 添加詳細日誌
   const synthesizeWithGeminiTTS = useCallback(async (text: string, speaker: Speaker): Promise<SynthesizedAudio | null> => {
     const geminiApiKey = getEnvVar('API_KEY');
 
@@ -198,6 +203,24 @@ export const RightPanel: React.FC<RightPanelProps> = ({
       const voiceInstruction = buildVoiceInstruction(speaker);
       const enhancedText = voiceInstruction ? `${voiceInstruction}\n\n"${text}"` : text;
       
+      // 🔍 調試日誌：顯示實際使用的參數
+      console.log('🎤 語音合成調試信息：');
+      console.log('發言人設定：', {
+        name: speaker.name,
+        voice: speaker.voice,
+        emotion: speaker.emotion,
+        pace: speaker.pace,
+        tone: speaker.tone,
+        style: speaker.style
+      });
+      console.log('語音指示詞：', voiceInstruction);
+      console.log('完整提示詞：', enhancedText);
+      console.log('API 配置：', {
+        model: "gemini-2.5-flash-preview-tts",
+        voiceName: speaker.voice,
+        responseModalities: ['Audio']
+      });
+      
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash-preview-tts",
         contents: [{ parts: [{ text: enhancedText }] }],
@@ -211,18 +234,30 @@ export const RightPanel: React.FC<RightPanelProps> = ({
         },
       });
 
+      // 🔍 調試日誌：API 回應信息
+      console.log('API 回應狀態：', {
+        hasResponse: !!response,
+        hasCandidates: !!response.candidates,
+        candidatesLength: response.candidates?.length,
+        hasInlineData: !!response.candidates?.[0]?.content?.parts?.[0]?.inlineData
+      });
+
       const inlineData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData;
       if (inlineData?.data) {
+        console.log('✅ 語音合成成功！', {
+          mimeType: inlineData.mimeType,
+          dataLength: inlineData.data.length
+        });
         return { 
           data: inlineData.data, 
           mimeType: inlineData.mimeType || 'audio/L16;codec=pcm;rate=24000'
         };
       } else {
-        console.error("Gemini TTS API 沒有返回預期的音頻內容:", response);
+        console.error("❌ Gemini TTS API 沒有返回預期的音頻內容:", response);
         throw new Error("Gemini TTS API 沒有返回音頻內容。");
       }
     } catch (e) {
-      console.error("Gemini TTS 語音合成錯誤:", e);
+      console.error("❌ Gemini TTS 語音合成錯誤:", e);
       throw e;
     }
   }, [setError]);
@@ -255,6 +290,19 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     }
     enhancedPrompt += `TTS the following conversation between ${activeSpeakers.map(s => s.name).join(' and ')}:\n${script}`;
 
+    // 🔍 調試日誌：多人對話合成
+    console.log('🎭 多人對話語音合成調試信息：');
+    console.log('活躍發言人：', activeSpeakers.map(s => ({
+      name: s.name,
+      voice: s.voice,
+      emotion: s.emotion,
+      pace: s.pace,
+      tone: s.tone,
+      style: s.style
+    })));
+    console.log('語音指示詞：', speakerInstructions);
+    console.log('完整提示詞：', enhancedPrompt);
+
     const speakerConfigs = activeSpeakers.map(speaker => ({
       speaker: speaker.name,
       voiceConfig: {
@@ -280,6 +328,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
 
       const inlineData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData;
       if (inlineData?.data) {
+        console.log('✅ 多人對話語音合成成功！');
         return { 
           data: inlineData.data, 
           mimeType: inlineData.mimeType || 'audio/L16;codec=pcm;rate=24000'
@@ -288,7 +337,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
         throw new Error("Gemini TTS 沒有返回音頻內容。");
       }
     } catch (e) {
-      console.error("Gemini 多人對話 TTS 錯誤:", e);
+      console.error("❌ Gemini 多人對話 TTS 錯誤:", e);
       throw e;
     }
   }, [setError, scriptMode]);
@@ -507,6 +556,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
             <span className="text-emerald-400 font-semibold text-sm">🚀 Gemini AI 原生 TTS 已啟用</span>
           </div>
           <p className="text-xs text-slate-400 mt-1">✨ 30種高品質語音 | 🎭 智能多人對話 | 🌍 24種語言支援 | 🎛️ 精細語音控制</p>
+          <p className="text-xs text-orange-300 mt-1">🔍 開啟瀏覽器的「開發者工具 → Console」可查看語音合成調試信息</p>
         </div>
 
         {(scriptMode === ScriptMode.SINGLE ? [speakers[0]] : speakers).map((speaker, originalIndex) => {

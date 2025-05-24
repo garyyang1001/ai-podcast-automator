@@ -3,7 +3,7 @@ import { VoiceOption, Speaker } from './types';
 export const APP_TITLE = "AI Podcast 產生器";
 export const GEMINI_MODEL_TEXT = "gemini-2.5-flash-preview-04-17";
 
-// 🌟 Gemini API 原生 TTS 語音（30種高品質語音）
+// 🌟 Gemini API 原生 TTS 語音（30種高品質語音）- 修正語音名稱
 export const AVAILABLE_VOICES: VoiceOption[] = [
   { id: 'Zephyr', name: '✨ Zephyr (明亮風格)' },
   { id: 'Puck', name: '✨ Puck (樂觀風格)' },
@@ -34,7 +34,7 @@ export const AVAILABLE_VOICES: VoiceOption[] = [
   { id: 'Vindemiatrix', name: '✨ Vindemiatrix (溫和風格)' },
   { id: 'Sadachbia', name: '✨ Sadachbia (活潑風格)' },
   { id: 'Sadaltager', name: '✨ Sadaltager (知識性)' },
-  { id: 'Sulafar', name: '✨ Sulafar (溫暖風格)' },
+  { id: 'Sulafat', name: '✨ Sulafat (溫暖風格)' }, // 🔄 修正：Sulafar → Sulafat
 ];
 
 export const EMOTION_OPTIONS = [
