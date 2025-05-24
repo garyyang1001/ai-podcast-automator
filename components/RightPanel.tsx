@@ -40,6 +40,40 @@ const getEnvVar = (key: string): string | undefined => {
   return process.env[key] || process.env[`VITE_${key}`];
 };
 
+// 修正：添加 PCM 到 WAV 轉換函數
+const convertPCMToWAV = (pcmData: Uint8Array, sampleRate: number = 24000, channels: number = 1, bitDepth: number = 16): Uint8Array => {
+  const dataLength = pcmData.length;
+  const buffer = new ArrayBuffer(44 + dataLength);
+  const view = new DataView(buffer);
+  
+  // WAV header
+  const writeString = (offset: number, string: string) => {
+    for (let i = 0; i < string.length; i++) {
+      view.setUint8(offset + i, string.charCodeAt(i));
+    }
+  };
+  
+  writeString(0, 'RIFF');                        // ChunkID
+  view.setUint32(4, 36 + dataLength, true);     // ChunkSize
+  writeString(8, 'WAVE');                       // Format
+  writeString(12, 'fmt ');                      // Subchunk1ID
+  view.setUint32(16, 16, true);                 // Subchunk1Size
+  view.setUint16(20, 1, true);                  // AudioFormat (PCM)
+  view.setUint16(22, channels, true);           // NumChannels
+  view.setUint32(24, sampleRate, true);         // SampleRate
+  view.setUint32(28, sampleRate * channels * bitDepth / 8, true); // ByteRate
+  view.setUint16(32, channels * bitDepth / 8, true);              // BlockAlign
+  view.setUint16(34, bitDepth, true);           // BitsPerSample
+  writeString(36, 'data');                      // Subchunk2ID
+  view.setUint32(40, dataLength, true);         // Subchunk2Size
+  
+  // PCM data
+  const uint8Array = new Uint8Array(buffer);
+  uint8Array.set(pcmData, 44);
+  
+  return uint8Array;
+};
+
 const AccordionSection: React.FC<{ title: string, icon?: React.ReactNode, children: React.ReactNode, defaultOpen?: boolean, id?: string }> = ({ title, icon, children, defaultOpen = false, id }) => {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const sectionId = id || `accordion-${title.replace(/\s+/g, '-').toLowerCase()}`;
@@ -105,7 +139,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
         model: "gemini-2.5-flash-preview-tts",
         contents: [{ parts: [{ text: text }] }],
         config: {
-          responseModalities: ['AUDIO'],
+          responseModalities: ['Audio'], // 修正：使用 'Audio' 而不是 'AUDIO'
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: { voiceName: voiceId },
@@ -114,11 +148,12 @@ export const RightPanel: React.FC<RightPanelProps> = ({
         },
       });
 
-      const data = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      if (data) {
+      const inlineData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData;
+      if (inlineData?.data) {
+        // 修正：直接返回原始數據，讓調用方處理格式轉換
         return { 
-          data: data, 
-          mimeType: 'audio/wav' 
+          data: inlineData.data, 
+          mimeType: inlineData.mimeType || 'audio/L16;codec=pcm;rate=24000'
         };
       } else {
         console.error("Gemini TTS API 沒有返回預期的音頻內容:", response);
@@ -160,7 +195,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
         model: "gemini-2.5-flash-preview-tts",
         contents: [{ parts: [{ text: prompt }] }],
         config: {
-          responseModalities: ['AUDIO'],
+          responseModalities: ['Audio'], // 修正：使用 'Audio' 而不是 'AUDIO'
           speechConfig: {
             multiSpeakerVoiceConfig: {
               speakerVoiceConfigs: speakerConfigs
@@ -169,11 +204,11 @@ export const RightPanel: React.FC<RightPanelProps> = ({
         }
       });
 
-      const data = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      if (data) {
+      const inlineData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData;
+      if (inlineData?.data) {
         return { 
-          data: data, 
-          mimeType: 'audio/wav' 
+          data: inlineData.data, 
+          mimeType: inlineData.mimeType || 'audio/L16;codec=pcm;rate=24000'
         };
       } else {
         throw new Error("Gemini TTS 沒有返回音頻內容。");
@@ -203,14 +238,16 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     try {
         const synthesized = await synthesizeSpeechInternal(textToSpeak, speaker.voice);
         if (synthesized) {
-            // 以 Blob + objectURL 方式播放，兼容性較好
+            // 修正：正確處理 PCM 音頻數據
             const byteCharacters = atob(synthesized.data);
-            const byteNumbers = new Array(byteCharacters.length);
+            const pcmData = new Uint8Array(byteCharacters.length);
             for (let i = 0; i < byteCharacters.length; i++) {
-              byteNumbers[i] = byteCharacters.charCodeAt(i);
+              pcmData[i] = byteCharacters.charCodeAt(i);
             }
-            const byteArray = new Uint8Array(byteNumbers);
-            const blob = new Blob([byteArray], { type: synthesized.mimeType });
+            
+            // 轉換 PCM 為 WAV 格式
+            const wavData = convertPCMToWAV(pcmData);
+            const blob = new Blob([wavData], { type: 'audio/wav' });
             const audioSrc = URL.createObjectURL(blob);
             const audio = new Audio(audioSrc);
             audio.play().catch(e => {
@@ -242,18 +279,20 @@ export const RightPanel: React.FC<RightPanelProps> = ({
         const synthesized = await synthesizeMultiSpeakerWithGemini(dialogLines, speakers);
         
         if (synthesized) {
+          // 修正：正確處理 PCM 音頻數據並轉換為 WAV
           const byteCharacters = atob(synthesized.data);
-          const byteNumbers = new Array(byteCharacters.length);
+          const pcmData = new Uint8Array(byteCharacters.length);
           for (let j = 0; j < byteCharacters.length; j++) {
-            byteNumbers[j] = byteCharacters.charCodeAt(j);
+            pcmData[j] = byteCharacters.charCodeAt(j);
           }
-          const byteArray = new Uint8Array(byteNumbers);
-          const blob = new Blob([byteArray], { type: synthesized.mimeType });
+          
+          // 轉換 PCM 為 WAV 格式
+          const wavData = convertPCMToWAV(pcmData);
+          const blob = new Blob([wavData], { type: 'audio/wav' });
 
           const link = document.createElement('a');
           link.href = URL.createObjectURL(blob);
-          const ext = synthesized.mimeType.includes('wav') ? 'wav' : 'mp3';
-          link.download = `gemini_podcast_full_conversation.${ext}`;
+          link.download = `gemini_podcast_full_conversation.wav`;
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
@@ -284,20 +323,22 @@ export const RightPanel: React.FC<RightPanelProps> = ({
             const synthesized = await synthesizeSpeechInternal(line.text, speaker.voice);
 
             if (synthesized) {
+              // 修正：正確處理 PCM 音頻數據並轉換為 WAV
               const byteCharacters = atob(synthesized.data);
-              const byteNumbers = new Array(byteCharacters.length);
+              const pcmData = new Uint8Array(byteCharacters.length);
               for (let j = 0; j < byteCharacters.length; j++) {
-                byteNumbers[j] = byteCharacters.charCodeAt(j);
+                pcmData[j] = byteCharacters.charCodeAt(j);
               }
-              const byteArray = new Uint8Array(byteNumbers);
-              const blob = new Blob([byteArray], { type: synthesized.mimeType });
+              
+              // 轉換 PCM 為 WAV 格式
+              const wavData = convertPCMToWAV(pcmData);
+              const blob = new Blob([wavData], { type: 'audio/wav' });
               
               const lineDuration = line.text.length * 0.1;
               onAudioSegmentSynthesized(line.id, lineDuration);
 
               const safeSpeakerName = speaker.name.replace(/[^\w\s\u4e00-\u9fa5]/gi, '').replace(/\s+/g, '_'); 
-              const ext = synthesized.mimeType.includes('wav') ? 'wav' : 'mp3';
-              const fileName = `podcast_segment_${String(i + 1).padStart(2, '0')}_${safeSpeakerName}.${ext}`;
+              const fileName = `podcast_segment_${String(i + 1).padStart(2, '0')}_${safeSpeakerName}.wav`;
               audioSegments.push({ name: fileName, data: blob });
             } else {
                setError(`第 ${i + 1} 行語音合成失敗，未收到音訊內容。`);
