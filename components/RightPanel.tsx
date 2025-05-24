@@ -112,6 +112,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
           generationConfig: {
             responseModalities: ["AUDIO"],
             speechConfig: {
+              audioEncoding: "MP3",
               voiceConfig: {
                 prebuiltVoiceConfig: {
                   voiceName: voiceId
@@ -190,6 +191,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
           generationConfig: {
             responseModalities: ["AUDIO"],
             speechConfig: {
+              audioEncoding: "MP3",
               multiSpeakerVoiceConfig: {
                 speakerVoiceConfigs: speakerConfigs
               }
